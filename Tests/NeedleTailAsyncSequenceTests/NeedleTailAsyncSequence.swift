@@ -41,6 +41,65 @@ struct NeedleTailAsyncConsumerTests {
         }
     }
 
+    @Test("urgent priority preserves FIFO among urgent work")
+    func urgentPriorityPreservesFIFOAmongUrgentWork() async {
+        let consumer = NeedleTailAsyncConsumer<Int>()
+        await consumer.feedConsumer(1, priority: .urgent)
+        await consumer.feedConsumer(2, priority: .urgent)
+        await consumer.feedConsumer(3, priority: .standard)
+
+        var collected: [Int] = []
+        while true {
+            switch await consumer.next() {
+            case .ready(let job):
+                collected.append(job.item)
+            case .consumed:
+                #expect(collected == [1, 2, 3])
+                return
+            }
+        }
+    }
+
+    @Test("immediate priority prepends ahead of urgent and lower work")
+    func immediatePriorityPrependsAheadOfUrgentAndLowerWork() async {
+        let consumer = NeedleTailAsyncConsumer<Int>()
+        await consumer.feedConsumer(1, priority: .urgent)
+        await consumer.feedConsumer(2, priority: .standard)
+        await consumer.feedConsumer(3, priority: .immediate)
+        await consumer.feedConsumer(4, priority: .immediate)
+
+        var collected: [Int] = []
+        while true {
+            switch await consumer.next() {
+            case .ready(let job):
+                collected.append(job.item)
+            case .consumed:
+                // Immediates LIFO-prepend; urgent still before standard.
+                #expect(collected == [4, 3, 1, 2])
+                return
+            }
+        }
+    }
+
+    @Test("urgent stays behind queued immediate work")
+    func urgentStaysBehindQueuedImmediateWork() async {
+        let consumer = NeedleTailAsyncConsumer<Int>()
+        await consumer.feedConsumer(1, priority: .immediate)
+        await consumer.feedConsumer(2, priority: .urgent)
+        await consumer.feedConsumer(3, priority: .urgent)
+
+        var collected: [Int] = []
+        while true {
+            switch await consumer.next() {
+            case .ready(let job):
+                collected.append(job.item)
+            case .consumed:
+                #expect(collected == [1, 2, 3])
+                return
+            }
+        }
+    }
+
     @Test("feed consumer with utility priority")
     func feedConsumerWithUtilityPriority() async {
         let consumer = NeedleTailAsyncConsumer<Int>()

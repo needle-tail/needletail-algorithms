@@ -59,8 +59,22 @@ public actor NeedleTailAsyncConsumer<T: Sendable> {
         let taskJob = TaskJob(item: item, priority: priority)
         
         switch priority {
-        case .urgent:
+        case .immediate:
+            // Explicit jump-to-front (LIFO among immediates). Use only when a
+            // single frame must preempt everything already queued — not for
+            // ordinary user ciphertext (see `.urgent`).
             deque.prepend(taskJob)
+        case .urgent:
+            // FIFO within the urgent band: after any `.immediate` head and after
+            // already-queued urgent work, ahead of lower priorities. Avoids
+            // reversing offline backlog reloads (newest peer ciphertext first).
+            if let index = deque.firstIndex(where: {
+                $0.priority != .immediate && $0.priority != .urgent
+            }) {
+                deque.insert(taskJob, at: index)
+            } else {
+                deque.append(taskJob)
+            }
         case .standard:
             insertTaskJob(taskJob, beforePriority: .utility)
         case .utility:
@@ -248,8 +262,20 @@ public struct TaskJob<T: Sendable>: Sendable {
 }
 
 /// An enumeration representing the priority levels of tasks.
+///
+/// Enqueue order (highest → lowest):
+/// - ``immediate``: prepend / jump-to-front (LIFO among immediates)
+/// - ``urgent``: FIFO within-band, ahead of lower priorities
+/// - ``standard`` / ``utility`` / ``background``: banded insert / append
+///
+/// New cases are appended so existing `Int` raw values stay stable for Codable.
 public enum Priority: Int, Sendable, Codable {
-    case urgent, standard, background, utility
+    case urgent = 0
+    case standard = 1
+    case background = 2
+    case utility = 3
+    /// Jump-to-front preempt. Prefer ``urgent`` for ordered user ciphertext.
+    case immediate = 4
 }
 
 /// A protocol defining the requirements for a consumer.
