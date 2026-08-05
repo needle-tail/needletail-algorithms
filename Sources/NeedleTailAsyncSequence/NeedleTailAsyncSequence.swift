@@ -178,10 +178,11 @@ extension NeedleTailAsyncSequence {
                 let result = await consumer.next()
                 switch result {
                 case .ready(let sequence):
-                    // If the deque is now empty, advance the state machine to consumed so the next iteration terminates.
-                    if await consumer.deque.isEmpty {
-                        _ = await consumer.next()
-                    }
+                    // Do NOT pre-advance the state machine here by calling `consumer.next()`
+                    // again when the deque looks empty: `next()` pops, so an item fed between
+                    // yielding this element and that call was popped and silently discarded.
+                    // Termination needs no pre-advance — `next()` re-derives state from deque
+                    // emptiness on every call and returns `.consumed` when truly drained.
                     return .success(sequence.item)
                 case .consumed:
                     return nil
