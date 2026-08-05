@@ -243,6 +243,35 @@ struct NeedleTailAsyncSequenceTests {
         #expect(collected == [20, 10])
     }
 
+    /// Contract: after draining the last queued item, a newly fed item is still delivered.
+    /// Projects commonly feed the next unit of work after handling the previous yield.
+    @Test("yielding last item does not discard a subsequently fed item")
+    func yieldingLastItemDoesNotDiscardSubsequentlyFedItem() async throws {
+        let consumer = NeedleTailAsyncConsumer<Int>()
+        await consumer.feedConsumer(1, priority: .standard)
+        let sequence = NeedleTailAsyncSequence(consumer: consumer)
+        let iterator = sequence.makeAsyncIterator()
+
+        let first = try await iterator.next()
+        guard case .success(let firstValue) = first else {
+            Issue.record("Expected success(1) for the sole queued item.")
+            return
+        }
+        #expect(firstValue == 1)
+        #expect(await consumer.deque.isEmpty)
+
+        await consumer.feedConsumer(2, priority: .standard)
+        let second = try await iterator.next()
+        guard case .success(let secondValue) = second else {
+            Issue.record("Expected success(2) after feeding the next item.")
+            return
+        }
+        #expect(secondValue == 2)
+
+        let third = try await iterator.next()
+        #expect(third == nil)
+    }
+
     @Test("empty consumer sequence terminates immediately")
     func emptyConsumerSequenceTerminatesImmediately() async throws {
         let consumer = NeedleTailAsyncConsumer<Int>()
